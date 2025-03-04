@@ -1,11 +1,16 @@
-# This config was automatically generated from your source code
-# Stacks detected: artifact:go-executable:,cicd:github-actions:.github/workflows,deps:go:.
 version: 2.1
-jobs:
-  test-go:
-    # Install go modules and run tests
+executors:
+  go-executor:
     docker:
       - image: cimg/go:1.20
+    working_directory: ~/project
+  docker-executor:
+    docker:
+      - image: cimg/base:stable
+    working_directory: ~/project
+jobs:
+  test-go:
+    executor: go-executor
     steps:
       - checkout
       - restore_cache:
@@ -27,9 +32,7 @@ jobs:
       - store_test_results:
           path: junit.xml
   build-go-executables:
-    # Build go executables and store them as artifacts
-    docker:
-      - image: cimg/go:1.20
+    executor: go-executor
     steps:
       - checkout
       - restore_cache:
@@ -54,18 +57,21 @@ jobs:
       - store_artifacts:
           path: ~/artifacts
           destination: executables
-  deploy:
-    # This is an example deploy job, not actually used by the workflow
-    docker:
-      - image: cimg/base:stable
+  push-docker-image:
+    executor: docker-executor
     steps:
-      # Replace this with steps to deploy to users
+      - checkout
+      - setup_remote_docker
       - run:
-          name: deploy
-          command: '#e.g. ./deploy.sh'
+          name: Authenticate with Docker Hub
+          command: |
+            echo $DOCKERHUB_PASSWORD | docker login -u $DOCKERHUB_USERNAME --password-stdin
       - run:
-          name: found github actions config
-          command: ':'
+          name: Build Docker Image
+          command: docker build -t $DOCKERHUB_USERNAME/your-image-name:$CIRCLE_SHA1 .
+      - run:
+          name: Push Docker Image
+          command: docker push $DOCKERHUB_USERNAME/your-image-name:$CIRCLE_SHA1
 workflows:
   build-and-test:
     jobs:
@@ -73,6 +79,9 @@ workflows:
       - build-go-executables:
           requires:
             - test-go
-    # - deploy:
-    #     requires:
-    #       - build-go-executables
+      - push-docker-image:
+          requires:
+            - build-go-executables
+          filters:
+            branches:
+              only: main
